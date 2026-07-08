@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MISA/AMIS HKD - Công Cụ Tạo Chứng Từ Tự Động (v8.8 Dễ khớp trên 100 mã)</title>
+    <title>MISA/AMIS HKD - Công Cụ Tạo Chứng Từ Tự Động (v8.9 Tự tăng số CT/XK)</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root { --primary-color: #007aff; --bg-color: #f5f5f7; --card-bg: #ffffff; --text-color: #1d1d1f; --danger-color: #ff3b30; }
@@ -62,11 +62,11 @@
                 <label>Kiểu khớp giá trị</label>
                 <select id="kieuGiaTri">
                     <option value="CHINHXAC">Chính xác hoàn toàn (Tối ưu cho 50–200 mã, lệch ≤ 1.5%)</option>
-                    <option value="KHOANG">Khoảng tự do (Sai số dưới 8%)</option>
+                    <option value="KHOANG">Khoảng tự do (Sai số dưới 3%)</option>
                 </select>
             </div>
             <div class="form-group">
-                <label>Số đếm chứng từ (Ví dụ điền số: 1)</label>
+                <label>Số đếm kế tiếp (tự lưu, ví dụ: 1)</label>
                 <input type="number" id="soCTNum" value="1" min="1">
             </div>
             <div class="form-group">
@@ -120,8 +120,43 @@
 </div>
 
 <script>
+    const STORAGE_NEXT_NUM_KEY = 'misa_hkd_next_global_counter';
+
+    function getPrefixChungTu(loaiCT) {
+        if (loaiCT === "NTTK") return "NTTK";
+        if (loaiCT === "BIA") return "BIA";
+        return "PT";
+    }
+
+    function laySoDemKeTiep() {
+        const saved = parseInt(localStorage.getItem(STORAGE_NEXT_NUM_KEY));
+        return (!isNaN(saved) && saved > 0) ? saved : 1;
+    }
+
+    function luuSoDemKeTiep(nextNum) {
+        const n = parseInt(nextNum);
+        if (!isNaN(n) && n > 0) {
+            localStorage.setItem(STORAGE_NEXT_NUM_KEY, String(n));
+            document.getElementById('soCTNum').value = n;
+        }
+    }
+
+    function capNhatGoiYSCT() {
+        const loaiCT = document.getElementById('loaiCT').value;
+        const num = parseInt(document.getElementById('soCTNum').value) || laySoDemKeTiep();
+        const paddedNum = String(num).padStart(3, '0');
+        log(`Số kế tiếp dự kiến: ${getPrefixChungTu(loaiCT)}${paddedNum} / XK${paddedNum}`);
+    }
+
     document.addEventListener("DOMContentLoaded", function() {
         document.getElementById('ngayCT').valueAsDate = new Date();
+        document.getElementById('soCTNum').value = laySoDemKeTiep();
+        document.getElementById('loaiCT').addEventListener('change', capNhatGoiYSCT);
+        document.getElementById('soCTNum').addEventListener('change', function() {
+            const manualNum = parseInt(this.value) || 1;
+            if (manualNum > laySoDemKeTiep()) luuSoDemKeTiep(manualNum);
+            capNhatGoiYSCT();
+        });
         hienThiLichSu();
     });
 
@@ -391,9 +426,9 @@
             const laChinhXac = document.getElementById('kieuGiaTri').value === "CHINHXAC";
             const ngayCT = document.getElementById('ngayCT').value;
 
-            const numInput = parseInt(document.getElementById('soCTNum').value) || 1;
+            const numInput = parseInt(document.getElementById('soCTNum').value) || laySoDemKeTiep();
             const paddedNum = String(numInput).padStart(3, '0');
-            const prefixCT = loaiCT === "NTTK" ? "NT" : "PT";
+            const prefixCT = getPrefixChungTu(loaiCT);
             const soCT = prefixCT + paddedNum; 
             const soPX = "XK" + paddedNum;     
 
@@ -542,8 +577,8 @@
             exportToMisaTemplate(phuongAnTotNhat, loaiCT, laGiamThue, ngayCT, soCT, soPX);
             luuLichSu(soCT, loaiCT, ngayCT, phuongAnTotNhat.rows.length, phuongAnTotNhat.total);
 
-            document.getElementById('soCTNum').value = numInput + 1;
-            log(`Hệ thống đã nhảy số đếm chứng từ tiếp theo lên: [${numInput + 1}]`);
+            luuSoDemKeTiep(numInput + 1);
+            log(`Hệ thống đã lưu số đếm kế tiếp: [${numInput + 1}] => lần sau sẽ tự tạo ${getPrefixChungTu(loaiCT)}${String(numInput + 1).padStart(3, '0')} / XK${String(numInput + 1).padStart(3, '0')}`);
 
         } catch (error) {
             alert("Lỗi hệ thống: " + error.message);
@@ -586,9 +621,9 @@
 
             let rowData = [
                 "Bán hàng hóa trong nước", phuongThucTT, "Có", "Có", "Có", "Chưa lập",
-                ngayCT, ngayCT, soCT, soPX, "", "", "", "", "KH00001", "Khách lẻ không lấy hóa đơn",
-                "", "", "", "", (loaiCT === "NTTK" ? "8600021966" : ""), "Thu tiền bán hàng Khách lẻ không lấy hóa đơn",
-                "Xuất kho bán hàng Khách lẻ không lấy hóa đơn",
+                ngayCT, ngayCT, soCT, soPX, "", "", "", "", "KH00001", "Bán cho người tiêu dùng",
+                "", "", "", "", (loaiCT === "NTTK" ? "8600021966" : ""), "Thu tiền bán hàng Bán cho người tiêu dùng",
+                "Xuất kho bán hàng Bán cho người tiêu dùng",
                 laGiamThue ? "Có" : "Không",
                 item.maHang, item.tenHang, "Không", "Không", item.dvt, sl, dg, thanhTien,
                 0, 0, "", "Kho HH", 0, 0, "", "", ""
