@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MISA/AMIS HKD - Công Cụ Tạo Chứng Từ Tự Động (v8.9 Tự tăng số CT/XK)</title>
+    <title>MISA/AMIS HKD - Công Cụ Tạo Chứng Từ Tự Động (v9.2 Quy Tắc Chỉnh Giá <100k Tăng / >=100k Giảm)</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root { --primary-color: #007aff; --bg-color: #f5f5f7; --card-bg: #ffffff; --text-color: #1d1d1f; --danger-color: #ff3b30; }
@@ -61,7 +61,7 @@
             <div class="form-group">
                 <label>Kiểu khớp giá trị</label>
                 <select id="kieuGiaTri">
-                    <option value="CHINHXAC">Chính xác hoàn toàn (Tối ưu cho 50–200 mã, lệch ≤ 1.5%)</option>
+                    <option value="CHINHXAC">Chính xác hoàn toàn (Lệch ≤ 1% quy tắc Tăng/Giảm)</option>
                     <option value="KHOANG">Khoảng tự do (Sai số dưới 3%)</option>
                 </select>
             </div>
@@ -76,7 +76,7 @@
             <div class="form-group">
                 <label>Chiến lược chọn hàng</label>
                 <select id="chienLuoc">
-                    <option value="DIEM">Chấm điểm 70/20/10 (Tồn kho / Giá trị / Ngẫu nhiên)</option>
+                    <option value="TONKHO">Ưu tiên Tồn kho + Quy tắc Chỉnh giá Thông minh</option>
                 </select>
             </div>
         </div>
@@ -157,6 +157,13 @@
             if (manualNum > laySoDemKeTiep()) luuSoDemKeTiep(manualNum);
             capNhatGoiYSCT();
         });
+        document.getElementById('btnXoaLichSu').addEventListener('click', function() {
+            if(confirm("Bạn có chắc chắn muốn xóa lịch sử chứng từ đã tạo?")) {
+                localStorage.removeItem('misa_ct_history');
+                hienThiLichSu();
+                log("Đã xóa lịch sử chứng từ.");
+            }
+        });
         hienThiLichSu();
     });
 
@@ -231,13 +238,11 @@
         return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/đ/g, "d").replace(/Đ/g, "D").toUpperCase();
     }
 
-    // Lọc từ khóa mặt hàng không giảm thuế
     function isHangKhongGiamThue(tenHang) {
         const t = boDau(tenHang);
         return t.includes("BIA") || t.includes("NUOC NGOT") || t.includes("COCA") || t.includes("COKE") || t.includes("PEPSI") || t.includes("THUOC LA") || t.includes("THUOC") || t.includes("MUOI");
     }
 
-    // Kiểm tra nhóm Bán Lẻ (HH; BANLE)
     function isThuocNhomBanLe(nhomHang) {
         const n = boDau(nhomHang);
         return n.includes("BANLE") || n.includes("BAN LE");
@@ -259,13 +264,11 @@
     function tinhDiemHangHoa(items) {
         if (items.length === 0) return [];
         let maxTon = Math.max(...items.map(i => i.tonKho)) || 1;
-        let maxGia = Math.max(...items.map(i => i.donGia)) || 1;
 
         return items.map(item => {
-            let scoreTon = (item.tonKho / maxTon) * 70;
-            let scoreGia = (item.donGia / maxGia) * 20;
-            let scoreRandom = Math.random() * 10;
-            return { item: item, score: scoreTon + scoreGia + scoreRandom };
+            let scoreTon = (item.tonKho / maxTon) * 85; 
+            let scoreRandom = Math.random() * 15;
+            return { item: item, score: scoreTon + scoreRandom };
         }).sort((a, b) => b.score - a.score).map(d => d.item);
     }
 
@@ -302,45 +305,37 @@
         tbody.innerHTML = html;
     }
 
-    function taoTapUngVienNhieuMa(itemsScored, n, mucTieu, laGiamThue) {
-        // Mục tiêu: với hóa đơn nhiều mã, ưu tiên mã có giá trị tối thiểu thấp để không vượt tổng tiền quá sớm.
-        const avgLine = mucTieu / n;
-        let pool = itemsScored.map(it => {
-            let mul = getPackingMultiple(it.maHang, it.tenHang);
-            let minLine = giaSauGiam(it.donGia, mul, laGiamThue);
-            return { item: it, mul: mul, minLine: minLine };
-        }).filter(x => x.minLine <= avgLine * (n >= 120 ? 1.6 : 2.2));
+    function taoTapUngVienCoMaLon(itemsScored, n) {
+        let hangCao = itemsScored.filter(it => it.donGia >= 150000);
+        let selected = [];
 
-        if (pool.length < n) {
-            pool = itemsScored.map(it => {
-                let mul = getPackingMultiple(it.maHang, it.tenHang);
-                return { item: it, mul: mul, minLine: giaSauGiam(it.donGia, mul, laGiamThue) };
-            });
+        if (hangCao.length > 0) {
+            let numBigAllowed = Math.floor(Math.random() * 10) + 1; // 1 -> 10 mã giá cao
+            let numBig = Math.min(hangCao.length, numBigAllowed);
+            let sortedHangCao = [...hangCao].sort((a, b) => b.tonKho - a.tonKho);
+            selected = sortedHangCao.slice(0, numBig);
         }
 
-        pool.sort((a, b) => a.minLine - b.minLine);
-        if (n >= 100) {
-            // 75% lấy trong nhóm giá trị tối thiểu thấp, 25% vẫn cho hàng tồn tốt để không bị quá đơn điệu.
-            let lowCount = Math.ceil(n * 0.75);
-            let lowPool = pool.slice(0, Math.min(pool.length, Math.max(n, Math.ceil(pool.length * 0.65))));
-            let restPool = pool.slice(lowPool.length);
-            let selected = lowPool.sort(() => 0.5 - Math.random()).slice(0, lowCount).map(x => x.item);
-            let need = n - selected.length;
-            if (need > 0) {
-                let extraSource = restPool.length >= need ? restPool : pool;
-                selected = selected.concat(extraSource.sort(() => 0.5 - Math.random()).slice(0, need).map(x => x.item));
-            }
-            return selected.slice(0, n);
+        let remainNeed = n - selected.length;
+        if (remainNeed > 0) {
+            let poolRemaining = itemsScored.filter(it => !selected.includes(it));
+            let topTonPool = poolRemaining.slice(0, Math.max(remainNeed * 2, 60));
+            let subSelected = topTonPool.sort(() => 0.5 - Math.random()).slice(0, remainNeed);
+            selected = selected.concat(subSelected);
         }
-        return pool.slice(0, Math.min(n + 150, pool.length)).sort(() => 0.5 - Math.random()).slice(0, n).map(x => x.item);
+
+        return selected.slice(0, n);
     }
 
     function timGiaTheoChenhlech(item, sl, laGiamThue, oldLine, desiredDelta, capLech) {
         let targetLine = oldLine + desiredDelta;
         if (targetLine <= 0) return null;
         let approx = laGiamThue ? Math.round((targetLine / 0.998) / sl) : Math.round(targetLine / sl);
+        
+        // Giới hạn biên độ <= 1.0%
         let minGia = Math.max(1, Math.ceil(item.donGia * (1 - capLech)));
         let maxGia = Math.floor(item.donGia * (1 + capLech));
+        
         let best = null;
         for (let g = Math.max(minGia, approx - 50); g <= Math.min(maxGia, approx + 50); g++) {
             let line = giaSauGiam(g, sl, laGiamThue);
@@ -352,27 +347,52 @@
         return best;
     }
 
-    function apDungChinhGiaDeKhop(rowsSelected, qtySelected, currentTotal, mucTieu, laGiamThue, maxAdjustCount, capLech) {
+    // THUẬT TOÁN CHỈNH GIÁ THEO QUY TẮC: < 100k ƯU TIÊN TĂNG | >= 100k ƯU TIÊN GIẢM
+    function apDungChinhGiaDeKhop(rowsSelected, qtySelected, currentTotal, mucTieu, laGiamThue, capLech) {
         let remainingDiff = mucTieu - currentTotal;
         let maBiThayDoi = {};
         if (remainingDiff === 0) return { ok: true, adjustMap: maBiThayDoi };
 
+        let isNeedIncrease = remainingDiff > 0; // Cần tăng tiền tổng -> ưu tiên chọn SP < 100k
         let candidateIndices = [];
+
         for (let i = 0; i < rowsSelected.length; i++) {
             let item = rowsSelected[i];
             let sl = qtySelected[i];
             let oldLine = giaSauGiam(item.donGia, sl, laGiamThue);
+            
             let minGia = Math.max(1, Math.ceil(item.donGia * (1 - capLech)));
             let maxGia = Math.floor(item.donGia * (1 + capLech));
             let minLine = giaSauGiam(minGia, sl, laGiamThue);
             let maxLine = giaSauGiam(maxGia, sl, laGiamThue);
-            let capacity = remainingDiff > 0 ? (maxLine - oldLine) : (oldLine - minLine);
-            if (capacity > 0) candidateIndices.push({ idx: i, capacity: capacity, oldLine: oldLine });
+            
+            let capacity = isNeedIncrease ? (maxLine - oldLine) : (oldLine - minLine);
+            
+            if (capacity > 0) {
+                // Đánh giá mức độ ưu tiên
+                let isMatchRule = isNeedIncrease ? (item.donGia < 100000) : (item.donGia >= 100000);
+                candidateIndices.push({
+                    idx: i,
+                    capacity: capacity,
+                    oldLine: oldLine,
+                    donGia: item.donGia,
+                    isMatchRule: isMatchRule,
+                    lineValue: oldLine
+                });
+            }
         }
-        candidateIndices.sort((a, b) => b.capacity - a.capacity);
-        let selectedCandidates = candidateIndices.slice(0, Math.min(candidateIndices.length, maxAdjustCount));
 
-        // Bước 1: phân bổ phần chênh lệch theo sức chứa chỉnh giá của từng dòng.
+        // Ưu tiên các mã thỏa mãn quy tắc trước, sau đó sắp xếp theo Thành tiền lớn
+        candidateIndices.sort((a, b) => {
+            if (a.isMatchRule !== b.isMatchRule) {
+                return a.isMatchRule ? -1 : 1; // Thỏa quy tắc lên trước
+            }
+            return b.lineValue - a.lineValue; // Trong cùng nhóm thì ưu tiên mã giá trị lớn
+        });
+
+        let maxAdjustCount = Math.min(candidateIndices.length, 3);
+        let selectedCandidates = candidateIndices.slice(0, maxAdjustCount);
+
         for (let k = 0; k < selectedCandidates.length; k++) {
             if (remainingDiff === 0) break;
             let idx = selectedCandidates[k].idx;
@@ -386,7 +406,7 @@
             remainingDiff -= found.delta;
         }
 
-        // Bước 2: nếu còn lệch nhỏ do làm tròn, quét cục bộ từng dòng để dồn nốt phần dư.
+        // Tinh chỉnh nốt vài đồng lẻ còn dư (nếu có)
         if (remainingDiff !== 0) {
             for (let z = 0; z < selectedCandidates.length; z++) {
                 let idx = selectedCandidates[z].idx;
@@ -436,10 +456,8 @@
             let laGiamThue = (giamThueStr === "CO");
             if (laBanBia) laGiamThue = false;
 
-            // BỘ LỌC HÀNG HÓA CHÍNH XÁC THEO ĐIỀU KIỆN
             let itemsHopLe = danhSachVatTu.filter(item => {
                 if (item.tonKho <= 0 || item.donGia <= 0) return false;
-
                 const multiple = getPackingMultiple(item.maHang, item.tenHang);
                 if (item.tonKho < multiple) return false;
 
@@ -447,22 +465,13 @@
                 const khongGiamThue = isHangKhongGiamThue(item.tenHang);
                 const tenUp = boDau(item.tenHang);
 
-                // 1. Nếu là chứng từ BIA: CHỈ ĐƯỢC CHỌN MẶT HÀNG LÀ BIA
-                if (laBanBia) {
-                    return tenUp.includes("BIA");
-                }
-
-                // 2. Nếu là chứng từ giảm thuế: Bắt buộc thuộc nhóm BÁN LẺ (HH; BANLE) và không nằm trong danh mục không giảm thuế
-                if (laGiamThue) {
-                    return thuocBanLe && !khongGiamThue;
-                } 
-                
-                // 3. Nếu là chứng từ không giảm thuế: Lấy các mặt hàng thuộc nhóm không giảm thuế (Bia, Thuốc, Nước ngọt, Muối...)
+                if (laBanBia) return tenUp.includes("BIA");
+                if (laGiamThue) return thuocBanLe && !khongGiamThue;
                 return khongGiamThue;
             });
 
             if (itemsHopLe.length < soMaMin) {
-                alert(`Kho chỉ tìm thấy ${itemsHopLe.length} mã thỏa mãn điều kiện lọc (${laBanBia ? "Chỉ lấy Bia" : (laGiamThue ? "Chỉ lấy nhóm HH; BANLE" : "Hàng không giảm thuế")}), không đủ mức tối thiểu ${soMaMin} mã.`);
+                alert(`Kho chỉ tìm thấy ${itemsHopLe.length} mã thỏa mãn điều kiện lọc, không đủ mức tối thiểu ${soMaMin} mã.`);
                 return;
             }
 
@@ -470,13 +479,13 @@
             let phuongAnTotNhat = null;
 
             let maxAttempts = soMaMin >= 120 ? 180000 : (soMaMin >= 80 ? 120000 : 60000);
-            log(`Bắt đầu tìm phương án: tối đa ${maxAttempts.toLocaleString()} vòng. Giữ nguyên quy tắc bội số 4/5/25.`);
+            log(`Bắt đầu chạy: Ưu tiên Tăng giá (<100k) & Giảm giá (>=100k).`);
 
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 let n = Math.floor(Math.random() * (soMaMax - soMaMin + 1)) + soMaMin;
                 if (n > itemsScored.length) n = itemsScored.length;
 
-                let xaoTron = taoTapUngVienNhieuMa(itemsScored, n, mucTieu, laGiamThue);
+                let xaoTron = taoTapUngVienCoMaLon(itemsScored, n);
                 if (xaoTron.length < n) continue;
                 
                 let currentTotal = 0;
@@ -484,7 +493,6 @@
                 let qtySelected = [];
                 let validCombo = true;
 
-                // Nếu nhiều mã, bắt đầu bằng số lượng tối thiểu theo bội số trước. Cách này dễ khớp hơn nhiều so với random số lượng lớn.
                 for (let i = 0; i < n; i++) {
                     let item = xaoTron[i];
                     let multiple = getPackingMultiple(item.maHang, item.tenHang);
@@ -497,7 +505,6 @@
                 }
                 if (!validCombo) continue;
 
-                // Sau khi đủ số mã tối thiểu, mới tăng thêm số lượng ở một số dòng để tiến gần mục tiêu.
                 let safety = 0;
                 while (currentTotal < mucTieu * 0.985 && safety < n * 4) {
                     safety++;
@@ -514,10 +521,8 @@
                 let diff = mucTieu - currentTotal;
                 
                 if (laChinhXac) {
-                    // Nhiều mã thì cho phép chỉnh giá nhiều dòng hơn, nhưng vẫn giữ giới hạn lệch đơn giá tối đa 1.5%.
-                    let maxAdjustCount = n >= 150 ? 90 : (n >= 100 ? 70 : 25);
-                    let capLech = 0.015;
-                    let kqAdjust = apDungChinhGiaDeKhop(rowsSelected, qtySelected, currentTotal, mucTieu, laGiamThue, maxAdjustCount, capLech);
+                    let capLech = 0.01; // Giới hạn lệch đơn giá <= 1.0%
+                    let kqAdjust = apDungChinhGiaDeKhop(rowsSelected, qtySelected, currentTotal, mucTieu, laGiamThue, capLech);
                     if (kqAdjust.ok) {
                         phuongAnTotNhat = { 
                             rows: [...rowsSelected], 
@@ -529,7 +534,6 @@
                         break;
                     }
                 } else {
-                    // Kiểu khoảng: cho phép sai số 3%, không cần chỉnh từng đồng.
                     if (Math.abs(diff) <= mucTieu * 0.03) {
                         phuongAnTotNhat = { 
                             rows: [...rowsSelected], 
@@ -544,24 +548,24 @@
             }
 
             if (!phuongAnTotNhat) {
-                alert("Chưa tìm thấy phương án khớp 100% trong giới hạn vòng quét. Hãy thử tăng giá trị mục tiêu, giảm số mã tối thiểu, hoặc chuyển sang kiểu Khoảng. Quy tắc bội số 4/5/25 vẫn đang được giữ nguyên.");
+                alert("Chưa tìm thấy phương án khớp 100% trong lượt này. Hãy bấm 'BẮT ĐẦU TẠO' một lần nữa!");
                 return;
             }
 
             log(`--------------------------------------------------`);
-            log(`Khớp thành công 100% cho ${phuongAnTotNhat.rows.length} mặt hàng.`);
-            log(`+ Điều kiện lọc: ${laBanBia ? "Chỉ lấy các mặt hàng BIA" : (laGiamThue ? "Chỉ lấy nhóm HH; BANLE" : "Hàng không giảm thuế")}`);
+            log(`Khớp thành công 100% cho chứng từ ${soCT} (${phuongAnTotNhat.rows.length} mã hàng).`);
             log(`+ Tổng tiền ban đầu: ${phuongAnTotNhat.totalBeforeAdjust.toLocaleString()} đ`);
             log(`+ Tổng tiền sau cùng (khớp mẫu 100%): ${phuongAnTotNhat.total.toLocaleString()} đ`);
 
             let keys = Object.keys(phuongAnTotNhat.adjustMap);
             if (keys.length > 0) {
-                log(`[LOG CHỈNH GIÁ CHI TIẾT] Đã phân bổ chỉnh giá cho ${keys.length} mã hàng (đảm bảo lệch ≤ 1.5%):`);
+                log(`[TỐI ƯU QUY TẮC GIÁ] Đã điều chỉnh đơn giá ${keys.length} sản phẩm (lệch ≤ 1%):`);
                 keys.forEach(idx => {
                     let item = phuongAnTotNhat.rows[idx];
                     let detail = phuongAnTotNhat.adjustMap[idx];
                     let pt = ((detail.newGia - detail.oldGia) / detail.oldGia * 100).toFixed(2);
-                    log(` + Mã [${item.maHang}] - ${item.tenHang}: Giá cũ ${detail.oldGia.toLocaleString()} đ -> Giá mới ${detail.newGia.toLocaleString()} đ (${pt > 0 ? '+' : ''}${pt}%)`);
+                    let hanhDong = detail.newGia > detail.oldGia ? "TĂNG GIÁ (<100k)" : "GIẢM GIÁ (>=100k)";
+                    log(` + [${hanhDong}] Mã [${item.maHang}] - ${item.tenHang}: Giá cũ ${detail.oldGia.toLocaleString()} đ -> Giá mới ${detail.newGia.toLocaleString()} đ (${pt > 0 ? '+' : ''}${pt}%)`);
                 });
             } else {
                 log(`Không có mã hàng nào bị điều chỉnh đơn giá.`);
@@ -572,13 +576,12 @@
                 let slXuat = phuongAnTotNhat.qtys[i];
                 itemKhokho.tonKho -= slXuat;
             }
-            log(`[CẬP NHẬT TỒN KHO]: Đã trừ tồn kho tương ứng trong bộ nhớ.`);
 
             exportToMisaTemplate(phuongAnTotNhat, loaiCT, laGiamThue, ngayCT, soCT, soPX);
             luuLichSu(soCT, loaiCT, ngayCT, phuongAnTotNhat.rows.length, phuongAnTotNhat.total);
 
             luuSoDemKeTiep(numInput + 1);
-            log(`Hệ thống đã lưu số đếm kế tiếp: [${numInput + 1}] => lần sau sẽ tự tạo ${getPrefixChungTu(loaiCT)}${String(numInput + 1).padStart(3, '0')} / XK${String(numInput + 1).padStart(3, '0')}`);
+            log(`Hệ thống đã lưu số đếm kế tiếp: [${numInput + 1}]`);
 
         } catch (error) {
             alert("Lỗi hệ thống: " + error.message);
