@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MISA/AMIS HKD - Công Cụ Tạo Chứng Từ Tự Động (v9.2 Quy Tắc Chỉnh Giá <100k Tăng / >=100k Giảm)</title>
+    <title>MISA/AMIS HKD - Công Cụ Tạo Chứng Từ Tự Động (v9.3 Tối Ưu Thứ Tự & Số Lượng)</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root { --primary-color: #007aff; --bg-color: #f5f5f7; --card-bg: #ffffff; --text-color: #1d1d1f; --danger-color: #ff3b30; }
@@ -74,9 +74,9 @@
                 <input type="date" id="ngayCT">
             </div>
             <div class="form-group">
-                <label>Chiến lược chọn hàng</label>
+                <label>Chiến lược sắp xếp</label>
                 <select id="chienLuoc">
-                    <option value="TONKHO">Ưu tiên Tồn kho + Quy tắc Chỉnh giá Thông minh</option>
+                    <option value="TONKHO">Ưu tiên Tồn lớn + Số lượng cao SP rẻ + Hàng giá cao ở giữa/cuối</option>
                 </select>
             </div>
         </div>
@@ -305,21 +305,21 @@
         tbody.innerHTML = html;
     }
 
-    function taoTapUngVienCoMaLon(itemsScored, n) {
+    // TẠO TẬP ỨNG VIÊN - GIỮ HÀNG TỒN KHỎ LỚN LÀM NÒNG CỐT
+    function taoTapUngVienPhuHop(itemsScored, n) {
         let hangCao = itemsScored.filter(it => it.donGia >= 150000);
         let selected = [];
 
         if (hangCao.length > 0) {
-            let numBigAllowed = Math.floor(Math.random() * 10) + 1; // 1 -> 10 mã giá cao
-            let numBig = Math.min(hangCao.length, numBigAllowed);
+            let numBigAllowed = Math.floor(Math.random() * 4) + 1; // 1 -> 4 mã giá cao
             let sortedHangCao = [...hangCao].sort((a, b) => b.tonKho - a.tonKho);
-            selected = sortedHangCao.slice(0, numBig);
+            selected = sortedHangCao.slice(0, Math.min(sortedHangCao.length, numBigAllowed));
         }
 
         let remainNeed = n - selected.length;
         if (remainNeed > 0) {
             let poolRemaining = itemsScored.filter(it => !selected.includes(it));
-            let topTonPool = poolRemaining.slice(0, Math.max(remainNeed * 2, 60));
+            let topTonPool = poolRemaining.sort((a, b) => b.tonKho - a.tonKho).slice(0, Math.max(remainNeed * 2, 60));
             let subSelected = topTonPool.sort(() => 0.5 - Math.random()).slice(0, remainNeed);
             selected = selected.concat(subSelected);
         }
@@ -327,12 +327,52 @@
         return selected.slice(0, n);
     }
 
+    // SẮP XẾP LẠI ĐƠN HÀNG: ĐẨY HÀNG GIÁ RẺ/TỒN LỚN LÊN ĐẦU, HÀNG GIÁ CAO VÀO GIỮA/CUỐI
+    function sapXepThuTuDonHang(rows, qtys) {
+        let combined = rows.map((r, i) => ({ row: r, qty: qtys[i] }));
+        
+        let highVal = combined.filter(c => c.row.donGia >= 150000);
+        let lowVal = combined.filter(c => c.row.donGia < 150000);
+
+        // Hàng giá rẻ: Ưu tiên tồn kho lớn & giá thấp xếp lên trước
+        lowVal.sort((a, b) => (b.row.tonKho - a.row.tonKho) || (a.row.donGia - b.row.donGia));
+
+        let result = [];
+        let highIdx = 0;
+        
+        // 25% dòng đầu tiên đảm bảo 100% là hàng giá rẻ / tồn kho lớn
+        let firstCut = Math.max(1, Math.floor(lowVal.length * 0.25));
+        for (let i = 0; i < firstCut && i < lowVal.length; i++) {
+            result.push(lowVal[i]);
+        }
+
+        let remainingLow = lowVal.slice(firstCut);
+        let totalRem = remainingLow.length + highVal.length;
+        
+        // Đoạn giữa & cuối: Trộn xen kẽ hàng giá cao vào
+        for (let i = 0; i < totalRem; i++) {
+            if (highIdx < highVal.length && (i % 3 === 1 || remainingLow.length === 0)) {
+                result.push(highVal[highIdx++]);
+            } else if (remainingLow.length > 0) {
+                result.push(remainingLow.shift());
+            }
+        }
+
+        while (highIdx < highVal.length) {
+            result.push(highVal[highIdx++]);
+        }
+
+        return {
+            rows: result.map(c => c.row),
+            qtys: result.map(c => c.qty)
+        };
+    }
+
     function timGiaTheoChenhlech(item, sl, laGiamThue, oldLine, desiredDelta, capLech) {
         let targetLine = oldLine + desiredDelta;
         if (targetLine <= 0) return null;
         let approx = laGiamThue ? Math.round((targetLine / 0.998) / sl) : Math.round(targetLine / sl);
         
-        // Giới hạn biên độ <= 1.0%
         let minGia = Math.max(1, Math.ceil(item.donGia * (1 - capLech)));
         let maxGia = Math.floor(item.donGia * (1 + capLech));
         
@@ -347,13 +387,12 @@
         return best;
     }
 
-    // THUẬT TOÁN CHỈNH GIÁ THEO QUY TẮC: < 100k ƯU TIÊN TĂNG | >= 100k ƯU TIÊN GIẢM
     function apDungChinhGiaDeKhop(rowsSelected, qtySelected, currentTotal, mucTieu, laGiamThue, capLech) {
         let remainingDiff = mucTieu - currentTotal;
         let maBiThayDoi = {};
         if (remainingDiff === 0) return { ok: true, adjustMap: maBiThayDoi };
 
-        let isNeedIncrease = remainingDiff > 0; // Cần tăng tiền tổng -> ưu tiên chọn SP < 100k
+        let isNeedIncrease = remainingDiff > 0;
         let candidateIndices = [];
 
         for (let i = 0; i < rowsSelected.length; i++) {
@@ -369,7 +408,6 @@
             let capacity = isNeedIncrease ? (maxLine - oldLine) : (oldLine - minLine);
             
             if (capacity > 0) {
-                // Đánh giá mức độ ưu tiên
                 let isMatchRule = isNeedIncrease ? (item.donGia < 100000) : (item.donGia >= 100000);
                 candidateIndices.push({
                     idx: i,
@@ -382,12 +420,11 @@
             }
         }
 
-        // Ưu tiên các mã thỏa mãn quy tắc trước, sau đó sắp xếp theo Thành tiền lớn
         candidateIndices.sort((a, b) => {
             if (a.isMatchRule !== b.isMatchRule) {
-                return a.isMatchRule ? -1 : 1; // Thỏa quy tắc lên trước
+                return a.isMatchRule ? -1 : 1;
             }
-            return b.lineValue - a.lineValue; // Trong cùng nhóm thì ưu tiên mã giá trị lớn
+            return b.lineValue - a.lineValue;
         });
 
         let maxAdjustCount = Math.min(candidateIndices.length, 3);
@@ -406,7 +443,6 @@
             remainingDiff -= found.delta;
         }
 
-        // Tinh chỉnh nốt vài đồng lẻ còn dư (nếu có)
         if (remainingDiff !== 0) {
             for (let z = 0; z < selectedCandidates.length; z++) {
                 let idx = selectedCandidates[z].idx;
@@ -479,13 +515,13 @@
             let phuongAnTotNhat = null;
 
             let maxAttempts = soMaMin >= 120 ? 180000 : (soMaMin >= 80 ? 120000 : 60000);
-            log(`Bắt đầu chạy: Ưu tiên Tăng giá (<100k) & Giảm giá (>=100k).`);
+            log(`Bắt đầu tạo chứng từ ${soCT}: Ưu tiên hàng rẻ/tồn lớn + Số lượng cao.`);
 
             for (let attempt = 0; attempt < maxAttempts; attempt++) {
                 let n = Math.floor(Math.random() * (soMaMax - soMaMin + 1)) + soMaMin;
                 if (n > itemsScored.length) n = itemsScored.length;
 
-                let xaoTron = taoTapUngVienCoMaLon(itemsScored, n);
+                let xaoTron = taoTapUngVienPhuHop(itemsScored, n);
                 if (xaoTron.length < n) continue;
                 
                 let currentTotal = 0;
@@ -493,11 +529,22 @@
                 let qtySelected = [];
                 let validCombo = true;
 
+                // Khởi tạo số lượng ban đầu (Sản phẩm giá rẻ được nhân số lượng cao hơn)
                 for (let i = 0; i < n; i++) {
                     let item = xaoTron[i];
                     let multiple = getPackingMultiple(item.maHang, item.tenHang);
                     let sl = multiple;
-                    if (sl > item.tonKho) { validCombo = false; break; }
+
+                    if (item.donGia < 50000 && item.tonKho >= multiple * 3) {
+                        let randMultiplier = Math.floor(Math.random() * 4) + 1; // 1 -> 4 lần quy cách
+                        sl = multiple * randMultiplier;
+                    } else if (item.donGia < 100000 && item.tonKho >= multiple * 2) {
+                        let randMultiplier = Math.floor(Math.random() * 2) + 1; // 1 -> 2 lần
+                        sl = multiple * randMultiplier;
+                    }
+
+                    if (sl > item.tonKho) sl = multiple;
+
                     rowsSelected.push(item);
                     qtySelected.push(sl);
                     currentTotal += giaSauGiam(item.donGia, sl, laGiamThue);
@@ -505,10 +552,19 @@
                 }
                 if (!validCombo) continue;
 
+                // Nhồi thêm số lượng (Ưu tiên 75% tần suất nhồi vào sản phẩm giá rẻ)
                 let safety = 0;
-                while (currentTotal < mucTieu * 0.985 && safety < n * 4) {
+                while (currentTotal < mucTieu * 0.985 && safety < n * 5) {
                     safety++;
-                    let idx = Math.floor(Math.random() * n);
+                    let cheapIndices = [];
+                    for (let idx = 0; idx < n; idx++) {
+                        if (rowsSelected[idx].donGia < 100000) cheapIndices.push(idx);
+                    }
+
+                    let idx = (cheapIndices.length > 0 && Math.random() < 0.75) 
+                        ? cheapIndices[Math.floor(Math.random() * cheapIndices.length)] 
+                        : Math.floor(Math.random() * n);
+
                     let item = rowsSelected[idx];
                     let multiple = getPackingMultiple(item.maHang, item.tenHang);
                     if (qtySelected[idx] + multiple > item.tonKho) continue;
@@ -518,10 +574,15 @@
                     currentTotal += addValue;
                 }
 
+                // SẮP XẾP LẠI THỨ TỰ TRƯỚC KHI CHỈNH GIÁ
+                let sortedOrder = sapXepThuTuDonHang(rowsSelected, qtySelected);
+                rowsSelected = sortedOrder.rows;
+                qtySelected = sortedOrder.qtys;
+
                 let diff = mucTieu - currentTotal;
                 
                 if (laChinhXac) {
-                    let capLech = 0.01; // Giới hạn lệch đơn giá <= 1.0%
+                    let capLech = 0.01;
                     let kqAdjust = apDungChinhGiaDeKhop(rowsSelected, qtySelected, currentTotal, mucTieu, laGiamThue, capLech);
                     if (kqAdjust.ok) {
                         phuongAnTotNhat = { 
