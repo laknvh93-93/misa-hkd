@@ -313,20 +313,29 @@
                 qtySelected.push(sl);
                 currentTotal = giaSauGiam(item.donGia, sl, laGiamThue);
             } else {
+                // TỐI ƯU DÀNH CHO PT & NTTK: Ưu tiên chọn các mã có tồn kho lớn bằng Trọng Số Tồn Kho
                 let maxItemsAllowed = itemsHopLe.length;
                 let n = Math.floor(Math.random() * Math.min(8, maxItemsAllowed)) + 1;
 
-                let xaoTron = [...itemsHopLe].sort(() => Math.random() - 0.5).slice(0, n);
+                let poolTemp = [...itemsHopLe];
+                let selectedMap = new Set();
 
-                for (let i = 0; i < n; i++) {
-                    let item = xaoTron[i];
-                    let sl = tinhSoLuongChon(item, loaiCT);
+                while (rowsSelected.length < n && poolTemp.length > 0) {
+                    let itemChon = chonHangTheoTrongSoTon(poolTemp);
+                    if (!itemChon) break;
 
-                    if (item.tonKho < sl) continue;
+                    if (!selectedMap.has(itemChon.maHang)) {
+                        selectedMap.add(itemChon.maHang);
+                        let sl = tinhSoLuongChon(itemChon, loaiCT);
 
-                    rowsSelected.push(item);
-                    qtySelected.push(sl);
-                    currentTotal += giaSauGiam(item.donGia, sl, laGiamThue);
+                        if (itemChon.tonKho >= sl) {
+                            rowsSelected.push(itemChon);
+                            qtySelected.push(sl);
+                            currentTotal += giaSauGiam(itemChon.donGia, sl, laGiamThue);
+                        }
+                    }
+                    // Bỏ mã vừa chọn khỏi pool tạm thời để tránh lặp mã trong cùng 1 HĐ
+                    poolTemp = poolTemp.filter(x => x.maHang !== itemChon.maHang);
                 }
             }
 
@@ -595,7 +604,7 @@
             parseCT = parseAndIncrementSoCT(runningSoCT);
             let soCT = runningSoCT;
             
-            // Định dạng phiếu xuất khoXK đi kèm đồng bộ số tự nhiên với PT/NTTK
+            // Định dạng phiếu xuất kho XK đi kèm đồng bộ số tự nhiên với PT/NTTK
             let soPX = parseCT.numStr ? ("XK" + parseCT.numStr) : ("XK" + runningSoCT);
 
             thanhCongCount++;
