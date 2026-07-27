@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Công Cụ Phân Bổ Hóa Đơn Bán Lẻ (MISA/AMIS) - V8.2 Price Cap Rules</title>
+    <title>Công Cụ Phân Bổ Hóa Đơn Bán Lẻ (MISA/AMIS) - V8.9 Tobacco Rounded Allocation</title>
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
         :root { --primary-color: #007aff; --bg-color: #f5f5f7; --card-bg: #ffffff; --text-color: #1d1d1f; }
@@ -40,22 +40,23 @@
         <div class="form-group" id="groupList" style="display: none;">
             <label>Danh sách giá trị hóa đơn (Đơn vị: NGHÌN ĐỒNG, phân tách bằng dấu ';'):</label>
             <textarea id="danhSachGiaTri" placeholder="Ví dụ: 250;350;525;1359;45"></textarea>
-            <small style="color: #666;">* Nhập <b>250</b> = <b>250.000đ</b> (Cho phép chỉnh giá nhẹ để khớp chính xác 100%)</small>
+            <small style="color: #666;">* Nhập <b>250</b> = <b>250.000đ</b> (Chỉnh giá tối đa ±1% để khớp tròn tiền)</small>
         </div>
 
         <div class="form-group" id="groupTotal">
             <label>Tổng số tiền cần phân bổ (Đơn vị: NGHÌN ĐỒNG hoặc nhập '20tr'):</label>
             <input type="text" id="tongTienInput" placeholder="Ví dụ: 20000 hoặc 20tr">
-            <small style="color: #666;">* Tự động tạo HĐ bán lẻ hợp lý, giữ 100% giá gốc, sai số ±5%.</small>
+            <small style="color: #666;">* Tự động tạo HĐ bán lẻ tròn tiền, tinh chỉnh đơn giá nhẹ (Max ±1%).</small>
         </div>
 
         <div class="grid-3">
             <div class="form-group">
                 <label>Loại chứng từ</label>
-                <select id="loaiCT">
-                    <option value="PT">PT (Phiếu thu tiền mặt)</option>
+                <select id="loaiCT" onchange="xuLyDoiLoaiCT()">
+                    <option value="PT">PT (Phiếu thu tiền mặt hàng tổng hợp)</option>
                     <option value="NTTK">NTTK (Nộp tiền tài khoản)</option>
-                    <option value="BIA">BIA (Hóa đơn xuất Bia)</option>
+                    <option value="BIA">BIA (Chứng từ chuyên Bia - 1 loại/HĐ, SL: 1-5)</option>
+                    <option value="THUOCLA">THUOCLA (Chứng từ Thuốc lá - 1 loại/HĐ, SL: 1-10)</option>
                 </select>
             </div>
             <div class="form-group">
@@ -66,8 +67,8 @@
                 </select>
             </div>
             <div class="form-group">
-                <label>Số chứng từ bắt đầu (Nhập dạng: PT001, PT0001,...)</label>
-                <input type="text" id="soCTInput" value="PT001">
+                <label>Số chứng từ bắt đầu (Nhập dạng: PT000001, NTTK000001,...)</label>
+                <input type="text" id="soCTInput" value="PT000001">
             </div>
             <div class="form-group">
                 <label>Ngày chứng từ</label>
@@ -82,7 +83,7 @@
             <label>Chọn File Excel danh mục vật tư</label>
             <input type="file" id="excelFile" accept=".xlsx, .xls">
         </div>
-        <button id="btnChay">TẠO TẤT CẢ CHỨNG TỪ & XUẤT EXCEL (V8.2)</button>
+        <button id="btnChay">TẠO TẤT CẢ CHỨNG TỪ & XUẤT EXCEL (V8.9)</button>
     </div>
 
     <div class="card">
@@ -95,6 +96,24 @@
     document.getElementById('ngayCT').valueAsDate = new Date();
     let danhSachVatTu = [];
 
+    // Tải số chứng từ gần nhất từ localStorage khi load trang
+    window.addEventListener('DOMContentLoaded', () => {
+        capNhatSoCTMacDinh();
+    });
+
+    function capNhatSoCTMacDinh() {
+        const loai = document.getElementById('loaiCT').value;
+        let prefix = "PT";
+        if (loai === "NTTK") prefix = "NTTK";
+        else if (loai === "BIA" || loai === "THUOCLA") prefix = loai;
+
+        let savedNum = localStorage.getItem('last_seq_' + prefix);
+        let num = savedNum ? parseInt(savedNum, 10) : 1;
+        
+        let padded = String(num).padStart(6, '0');
+        document.getElementById('soCTInput').value = prefix + padded;
+    }
+
     function doiCheDoNhap() {
         const mode = document.querySelector('input[name="modeNhap"]:checked').value;
         if (mode === "LIST") {
@@ -104,6 +123,15 @@
             document.getElementById('groupList').style.display = 'none';
             document.getElementById('groupTotal').style.display = 'block';
         }
+    }
+
+    function xuLyDoiLoaiCT() {
+        const loai = document.getElementById('loaiCT').value;
+        const selectGiamThue = document.getElementById('giamThue');
+        if (loai === "BIA" || loai === "THUOCLA") {
+            selectGiamThue.value = "KHONG";
+        }
+        capNhatSoCTMacDinh();
     }
 
     function parseAndIncrementSoCT(soCTStr) {
@@ -116,6 +144,7 @@
             return {
                 prefix: prefix,
                 numStr: numStr,
+                nextNum: nextNum,
                 paddedNum: paddedNum,
                 currentFull: prefix + numStr,
                 nextFull: prefix + paddedNum
@@ -127,12 +156,13 @@
                 return {
                     prefix: "",
                     numStr: soCTStr,
+                    nextNum: numOnly + 1,
                     paddedNum: paddedNum,
                     currentFull: soCTStr,
                     nextFull: paddedNum
                 };
             }
-            return { prefix: soCTStr, numStr: "", paddedNum: "", currentFull: soCTStr, nextFull: soCTStr };
+            return { prefix: soCTStr, numStr: "", nextNum: 1, paddedNum: "", currentFull: soCTStr, nextFull: soCTStr };
         }
     }
 
@@ -222,20 +252,23 @@
         return 1;
     }
 
-    // THUẬT TOÁN TÍNH SỐ LƯỢNG CHUẨN ĐỊNH HƯỚNG BÁN LẺ
-    function tinhSoLuongChon(item) {
-        // RÀNG BUỘC CỨNG: Hàng có Đơn giá > 200.000đ thì TỐI ĐA CHỈ BÁN 2 (Đa phần là 1)
+    function tinhSoLuongChon(item, loaiCT) {
+        if (loaiCT === "BIA") {
+            return Math.floor(Math.random() * 5) + 1;
+        }
+        if (loaiCT === "THUOCLA") {
+            return Math.floor(Math.random() * 10) + 1;
+        }
+
         if (item.donGia > 200000) {
-            return Math.random() < 0.8 ? 1 : 2; // 80% chọn 1, 20% chọn 2
+            return Math.random() < 0.8 ? 1 : 2;
         }
 
         let nhom = getNhomSanPham(item.tenHang);
         let step = getPackingMultiple(item.maHang, item.tenHang);
 
-        if (nhom === "SUA") {
-            return step * (Math.floor(Math.random() * 3) + 1); // 1 đến 3 lốc/vỉ
-        } else if (nhom === "MI") {
-            return step * (Math.floor(Math.random() * 3) + 1); // 1 đến 3 thùng/gói
+        if (nhom === "SUA" || nhom === "MI") {
+            return step * (Math.floor(Math.random() * 3) + 1);
         } else {
             return step * (Math.floor(Math.random() * 2) + 1);
         }
@@ -246,105 +279,55 @@
         return laGiamThue ? (tt - Math.round(tt * 0.002)) : tt;
     }
 
-    function chonHangTheoTrongSoTonKho(poolItems) {
-        let tongTon = poolItems.reduce((sum, item) => sum + Math.max(item.tonKho, 0), 0);
-        if (tongTon <= 0) return poolItems[Math.floor(Math.random() * poolItems.length)];
+    function chonHangTheoTrongSoTon(itemsList) {
+        let itemsAvailable = itemsList.filter(x => x.tonKho > 0);
+        if (itemsAvailable.length === 0) return null;
 
-        let randomVal = Math.random() * tongTon;
+        let tongTon = itemsAvailable.reduce((sum, item) => sum + item.tonKho, 0);
+        let rand = Math.random() * tongTon;
         let cumulative = 0;
-        for (let item of poolItems) {
-            cumulative += Math.max(item.tonKho, 0);
-            if (randomVal <= cumulative) return item;
+
+        for (let item of itemsAvailable) {
+            cumulative += item.tonKho;
+            if (rand <= cumulative) return item;
         }
-        return poolItems[0];
+        return itemsAvailable[0];
     }
 
-    function sinhChungTuTuTongTienBanLeV7(tongTienVND, itemsHopLe, laGiamThue) {
-        let tongDaTao = 0;
-        let dsChungTu = [];
-        const minTarget = tongTienVND * 0.95;
-        const maxTarget = tongTienVND * 1.05;
-
-        let attempts = 0;
-        while (tongDaTao < minTarget && attempts < 1500) {
-            attempts++;
-            let conLai = maxTarget - tongDaTao;
-
-            let mucTieuHD = Math.floor(Math.random() * 650) * 1000 + 200000;
-            if (mucTieuHD > conLai) mucTieuHD = conLai;
-
-            let pool = itemsHopLe.filter(x => x.tonKho > 0);
-            if (pool.length === 0) break;
-
-            let rowsSelected = [];
-            let qtySelected = [];
-            let currentHDTotal = 0;
-            let usedMaHang = new Set();
-
-            let innerLoop = 0;
-            while (pool.length > 0 && currentHDTotal < mucTieuHD && innerLoop < 120) {
-                innerLoop++;
-                let item = chonHangTheoTrongSoTonKho(pool);
-                if (!item || usedMaHang.has(item.maHang)) {
-                    pool = pool.filter(x => x.maHang !== item?.maHang);
-                    continue;
-                }
-
-                let slChon = tinhSoLuongChon(item);
-
-                if (item.tonKho >= slChon) {
-                    let lineCost = giaSauGiam(item.donGia, slChon, laGiamThue);
-
-                    if (currentHDTotal + lineCost > mucTieuHD + 70000 && rowsSelected.length >= 2) {
-                        pool = pool.filter(x => x.maHang !== item.maHang);
-                        continue;
-                    }
-
-                    rowsSelected.push(item);
-                    qtySelected.push(slChon);
-                    usedMaHang.add(item.maHang);
-                    currentHDTotal += lineCost;
-                    item.tonKho -= slChon;
-                    pool = pool.filter(x => x.maHang !== item.maHang);
-                }
-            }
-
-            if (rowsSelected.length >= 1) {
-                dsChungTu.push({
-                    rows: rowsSelected,
-                    qtys: qtySelected,
-                    adjustMap: {},
-                    tongTienHD: currentHDTotal
-                });
-                tongDaTao += currentHDTotal;
-            }
-
-            if (tongDaTao >= minTarget && tongDaTao <= maxTarget) break;
-        }
-
-        return { dsChungTu, tongDaTao };
-    }
-
-    function taoMotChungTu(mucTieu, itemsHopLe, laGiamThue) {
-        let maxAttempts = 25000;
+    function taoMotChungTu(mucTieu, itemsHopLe, laGiamThue, loaiCT) {
+        let maxAttempts = (loaiCT === "BIA" || loaiCT === "THUOCLA") ? 10000 : 35000;
+        
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            let n = Math.floor(Math.random() * 8) + 3;
-            if (n > itemsHopLe.length) n = itemsHopLe.length;
-
-            let xaoTron = [...itemsHopLe].sort(() => Math.random() - 0.5).slice(0, n);
-            let currentTotal = 0;
             let rowsSelected = [];
             let qtySelected = [];
+            let currentTotal = 0;
 
-            for (let i = 0; i < n; i++) {
-                let item = xaoTron[i];
-                let sl = tinhSoLuongChon(item);
+            if (loaiCT === "BIA" || loaiCT === "THUOCLA") {
+                let item = chonHangTheoTrongSoTon(itemsHopLe);
+                if (!item) break;
 
+                let sl = tinhSoLuongChon(item, loaiCT);
                 if (item.tonKho < sl) continue;
 
                 rowsSelected.push(item);
                 qtySelected.push(sl);
-                currentTotal += giaSauGiam(item.donGia, sl, laGiamThue);
+                currentTotal = giaSauGiam(item.donGia, sl, laGiamThue);
+            } else {
+                let maxItemsAllowed = itemsHopLe.length;
+                let n = Math.floor(Math.random() * Math.min(8, maxItemsAllowed)) + 1;
+
+                let xaoTron = [...itemsHopLe].sort(() => Math.random() - 0.5).slice(0, n);
+
+                for (let i = 0; i < n; i++) {
+                    let item = xaoTron[i];
+                    let sl = tinhSoLuongChon(item, loaiCT);
+
+                    if (item.tonKho < sl) continue;
+
+                    rowsSelected.push(item);
+                    qtySelected.push(sl);
+                    currentTotal += giaSauGiam(item.donGia, sl, laGiamThue);
+                }
             }
 
             if (rowsSelected.length === 0) continue;
@@ -361,6 +344,7 @@
 
                     if (targetLine > 0) {
                         let newGia = laGiamThue ? Math.round((targetLine / 0.998) / sl) : Math.round(targetLine / sl);
+                        
                         let capLech = 0.01;
                         let minGia = Math.ceil(item.donGia * (1 - capLech));
                         let maxGia = item.donGia >= 100000 ? item.donGia : Math.floor(item.donGia * (1 + capLech));
@@ -385,6 +369,95 @@
         return null;
     }
 
+    function sinhChungTuThuocLaPhanBoDong(tongTienVND, itemsHopLe, laGiamThue) {
+        let tongDaTao = 0;
+        let dsChungTu = [];
+        const minTarget = tongTienVND * 0.95;
+        const maxTarget = tongTienVND * 1.05;
+
+        let attempts = 0;
+        while (tongDaTao < minTarget && attempts < 2500) {
+            attempts++;
+
+            let itemChon = chonHangTheoTrongSoTon(itemsHopLe);
+            if (!itemChon) break;
+
+            let sl = tinhSoLuongChon(itemChon, "THUOCLA");
+            if (itemChon.tonKho < sl) continue;
+
+            let tienGoc = itemChon.donGia * sl;
+            let conLai = maxTarget - tongDaTao;
+
+            if (tienGoc > conLai) {
+                let slFit = Math.floor(conLai / itemChon.donGia);
+                if (slFit >= 1) {
+                    sl = slFit;
+                    tienGoc = itemChon.donGia * sl;
+                } else {
+                    break;
+                }
+            }
+
+            let mucTieuTron = Math.round(tienGoc / 1000) * 1000;
+            if (mucTieuTron < 5000) mucTieuTron = tienGoc;
+
+            let pa = taoMotChungTu(mucTieuTron, [itemChon], laGiamThue, "THUOCLA");
+            if (!pa) {
+                let fallbackTotal = itemChon.donGia * sl;
+                pa = {
+                    rows: [itemChon],
+                    qtys: [sl],
+                    adjustMap: {},
+                    tongTienHD: fallbackTotal
+                };
+            }
+
+            dsChungTu.push(pa);
+            tongDaTao += pa.tongTienHD;
+            itemChon.tonKho -= pa.qtys[0];
+
+            if (tongDaTao >= minTarget && tongDaTao <= maxTarget) break;
+        }
+
+        return { dsChungTu, tongDaTao };
+    }
+
+    function sinhChungTuTuTongTienBanLeV7(tongTienVND, itemsHopLe, laGiamThue, loaiCT) {
+        if (loaiCT === "THUOCLA") {
+            return sinhChungTuThuocLaPhanBoDong(tongTienVND, itemsHopLe, laGiamThue);
+        }
+
+        let tongDaTao = 0;
+        let dsChungTu = [];
+        const minTarget = tongTienVND * 0.95;
+        const maxTarget = tongTienVND * 1.05;
+
+        let attempts = 0;
+        while (tongDaTao < minTarget && attempts < 1500) {
+            attempts++;
+            let conLai = maxTarget - tongDaTao;
+
+            let mucTieuHD = Math.floor(Math.random() * 650 + 200) * 1000;
+            if (mucTieuHD > conLai) mucTieuHD = Math.floor(conLai / 1000) * 1000;
+            if (mucTieuHD < 30000) break;
+
+            let pa = taoMotChungTu(mucTieuHD, itemsHopLe, laGiamThue, loaiCT);
+            if (pa) {
+                dsChungTu.push(pa);
+                tongDaTao += pa.tongTienHD;
+
+                for (let i = 0; i < pa.rows.length; i++) {
+                    let itemInKho = itemsHopLe.find(x => x.maHang === pa.rows[i].maHang);
+                    if (itemInKho) itemInKho.tonKho -= pa.qtys[i];
+                }
+            }
+
+            if (tongDaTao >= minTarget && tongDaTao <= maxTarget) break;
+        }
+
+        return { dsChungTu, tongDaTao };
+    }
+
     document.getElementById('btnChay').addEventListener('click', function() {
         if (!danhSachVatTu || danhSachVatTu.length === 0) {
             alert("Vui lòng tải file Excel vật tư trước!");
@@ -393,9 +466,9 @@
 
         const mode = document.querySelector('input[name="modeNhap"]:checked').value;
         const loaiCT = document.getElementById('loaiCT').value;
-        const laBanBia = (loaiCT === "BIA");
+        
         let laGiamThue = (document.getElementById('giamThue').value === "CO");
-        if (laBanBia) laGiamThue = false;
+        if (loaiCT === "BIA" || loaiCT === "THUOCLA") laGiamThue = false;
 
         let rawSoCT = document.getElementById('soCTInput').value.trim();
         const ngayCT = document.getElementById('ngayCT').value;
@@ -403,14 +476,20 @@
         let itemsHopLe = danhSachVatTu.filter(item => {
             if (item.tonKho <= 0 || item.donGia <= 0) return false;
 
+            const tenUp = boDau(item.tenHang);
+
+            if (loaiCT === "BIA") {
+                return tenUp.includes("BIA");
+            }
+            if (loaiCT === "THUOCLA") {
+                return tenUp.includes("THUOC LA") || tenUp.includes("THUOC");
+            }
+
             const multiple = getPackingMultiple(item.maHang, item.tenHang);
             if (item.tonKho < multiple) return false;
 
             const thuocBanLe = isThuocNhomBanLe(item.nhomHang);
             const khongGiamThue = isHangKhongGiamThue(item.tenHang);
-            const tenUp = boDau(item.tenHang);
-
-            if (laBanBia) return tenUp.includes("BIA");
 
             if (laGiamThue) {
                 return thuocBanLe && !khongGiamThue; 
@@ -420,11 +499,12 @@
         });
 
         if (itemsHopLe.length === 0) {
-            alert(`Kho không tìm thấy mặt hàng hợp lệ nào phù hợp với cấu hình hiện tại!`);
+            alert(`Kho không tìm thấy mặt hàng hợp lệ nào cho loại chứng từ '${loaiCT}'!`);
             return;
         }
 
         let danhSachKieuHD = [];
+        let tongSoHDCanTao = 0;
 
         if (mode === "LIST") {
             const rawInput = document.getElementById('danhSachGiaTri').value.trim();
@@ -437,16 +517,18 @@
                 .filter(v => !isNaN(v) && v > 0)
                 .map(v => v * 1000);
 
-            if (danhSachMucTieu.length === 0) {
+            tongSoHDCanTao = danhSachMucTieu.length;
+
+            if (tongSoHDCanTao === 0) {
                 alert("Danh sách giá trị không hợp lệ!");
                 return;
             }
 
-            log(`=== BẮT ĐẦU TẠO ${danhSachMucTieu.length} CHỨNG TỪ THEO DANH SÁCH ===`);
+            log(`=== BẮT ĐẦU TẠO ${tongSoHDCanTao} CHỨNG TỪ THEO DANH SÁCH (${loaiCT}) ===`);
             danhSachMucTieu.forEach(mucTieu => {
-                let pa = taoMotChungTu(mucTieu, itemsHopLe, laGiamThue);
+                let pa = taoMotChungTu(mucTieu, itemsHopLe, laGiamThue, loaiCT);
                 if (pa) danhSachKieuHD.push(pa);
-                else log(`[THẤT BẠI] Không tìm được tổ hợp khớp với giá trị ${mucTieu.toLocaleString()} đ`);
+                else log(`[THẤT BẠI] Không tìm được tổ hợp khớp với giá trị ${mucTieu.toLocaleString()} đ (Giới hạn sửa giá ≤ 1%)`);
             });
         } else {
             let totalStr = document.getElementById('tongTienInput').value.trim().toLowerCase();
@@ -461,22 +543,23 @@
                 }
             }
 
-            if (isNaN(totalVal) || totalVal < 30000) {
+            if (isNaN(totalVal) || totalVal < 10000) {
                 alert("Vui lòng nhập tổng số tiền hợp lệ!");
                 return;
             }
 
             let cloneItems = itemsHopLe.map(x => ({...x}));
-            let result = sinhChungTuTuTongTienBanLeV7(totalVal, cloneItems, laGiamThue);
+            let result = sinhChungTuTuTongTienBanLeV7(totalVal, cloneItems, laGiamThue, loaiCT);
             danhSachKieuHD = result.dsChungTu;
+            tongSoHDCanTao = danhSachKieuHD.length;
 
             let ptramDat = ((result.tongDaTao / totalVal) * 100).toFixed(2);
-            log(`=== BẮT ĐẦU PHÂN BỔ BÁN LẺ TỔNG TIỀN ${(totalVal).toLocaleString()} đ ===`);
+            log(`=== BẮT ĐẦU PHÂN BỔ BÁN LẺ TỔNG TIỀN ${(totalVal).toLocaleString()} đ (${loaiCT}) ===`);
             log(`👉 Đã tạo thành công ${danhSachKieuHD.length} HĐ. Tổng thực tế: ${(result.tongDaTao).toLocaleString()} đ (${ptramDat}% - Sai số ±5%).`);
         }
 
         if (danhSachKieuHD.length === 0) {
-            alert("Không thể tạo được chứng từ nào. Vui lòng kiểm tra lại dữ liệu!");
+            alert(`Không thể tạo được chứng từ nào (0/${tongSoHDCanTao}). Vui lòng kiểm tra lại dữ liệu!`);
             return;
         }
 
@@ -506,10 +589,13 @@
 
         let thanhCongCount = 0;
         let runningSoCT = rawSoCT;
+        let parseCT = parseAndIncrementSoCT(runningSoCT);
 
         danhSachKieuHD.forEach((pa) => {
-            let parseCT = parseAndIncrementSoCT(runningSoCT);
+            parseCT = parseAndIncrementSoCT(runningSoCT);
             let soCT = runningSoCT;
+            
+            // Định dạng phiếu xuất khoXK đi kèm đồng bộ số tự nhiên với PT/NTTK
             let soPX = parseCT.numStr ? ("XK" + parseCT.numStr) : ("XK" + runningSoCT);
 
             thanhCongCount++;
@@ -521,7 +607,9 @@
                     let adj = pa.adjustMap[idx];
                     let chênhLệch = adj.newGia - adj.oldGia;
                     let dau = chênhLệch > 0 ? "+" : "";
-                    log(`   ⚠️ [SỬA GIÁ] Mã [${adj.maHang}]: Giá gốc ${adj.oldGia.toLocaleString()}đ ➔ Giá mới ${adj.newGia.toLocaleString()}đ (${dau}${chênhLệch.toLocaleString()}đ)`);
+                    let phanTram = ((chênhLệch / adj.oldGia) * 100).toFixed(2);
+                    let phanTramDau = phanTram > 0 ? "+" : "";
+                    log(`   ⚠️ [SỬA GIÁ] Mã [${adj.maHang}]: Giá gốc ${adj.oldGia.toLocaleString()}đ ➔ Giá mới ${adj.newGia.toLocaleString()}đ (${dau}${chênhLệch.toLocaleString()}đ tương ứng ${phanTramDau}${phanTram}%)`);
                 });
             } else {
                 log(`   ✅ Giá bán giữ nguyên 100% theo giá gốc.`);
@@ -534,8 +622,10 @@
                 let thanhTien = Math.round(sl * dg);
                 let phuongThucTT = loaiCT === "NTTK" ? "Thu tiền ngay - Chuyển khoản" : "Thu tiền ngay - Tiền mặt";
 
-                let origItem = danhSachVatTu.find(x => x.maHang === item.maHang);
-                if (origItem) origItem.tonKho -= sl;
+                if (mode === "LIST") {
+                    let origItem = danhSachVatTu.find(x => x.maHang === item.maHang);
+                    if (origItem) origItem.tonKho -= sl;
+                }
 
                 let rowData = [
                     "Bán hàng hóa trong nước", phuongThucTT, "Có", "Có", "Có", "Chưa lập",
@@ -552,6 +642,11 @@
             runningSoCT = parseCT.nextFull;
         });
 
+        // Lưu số đếm chứng từ kế tiếp vào localStorage để khi mở lại trang không bị về 1
+        if (parseCT.prefix) {
+            localStorage.setItem('last_seq_' + parseCT.prefix, parseCT.nextNum);
+        }
+
         document.getElementById('soCTInput').value = runningSoCT;
 
         if (thanhCongCount > 0) {
@@ -560,9 +655,9 @@
             XLSX.utils.book_append_sheet(wb, ws, "Ban hang");
             XLSX.writeFile(wb, `Tong_Hop_Mau_Ban_Hang_MISA_${thanhCongCount}_CT.xlsx`);
             log(`==================================================`);
-            log(`🎉 ĐÃ HOÀN THÀNH TẠO ${thanhCongCount} CHỨNG TỪ.`);
+            log(`🎉 ĐÃ HOÀN THÀNH TẠO ${thanhCongCount}/${tongSoHDCanTao} CHỨNG TỪ.`);
             log(`👉 Số chứng từ kế tiếp đã được tự động nhảy thành: ${runningSoCT}`);
-            alert(`Đã hoàn thành! Tạo thành công ${thanhCongCount} chứng từ.\nSố chứng từ tiếp theo trên màn hình đã cập nhật thành ${runningSoCT}.`);
+            alert(`Đã xuất thành công ${thanhCongCount}/${tongSoHDCanTao} chứng từ!\nSố chứng từ tiếp theo đã cập nhật thành: ${runningSoCT}`);
         }
     });
 </script>
