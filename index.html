@@ -268,14 +268,13 @@
         let nhom = getNhomSanPham(item.tenHang);
         let step = getPackingMultiple(item.maHang, item.tenHang);
 
-        // Tính hệ số nhân dựa trên quy mô tồn kho
         let tonMultiplier = 1;
         if (item.tonKho >= 10000) {
-            tonMultiplier = Math.floor(Math.random() * 5) + 5; // Tồn >= 10,000 -> nhân 5 đến 9 lần
+            tonMultiplier = Math.floor(Math.random() * 5) + 5;
         } else if (item.tonKho >= 3000) {
-            tonMultiplier = Math.floor(Math.random() * 3) + 3; // Tồn >= 3,000 -> nhân 3 đến 5 lần
+            tonMultiplier = Math.floor(Math.random() * 3) + 3;
         } else if (item.tonKho >= 1000) {
-            tonMultiplier = Math.floor(Math.random() * 2) + 2; // Tồn >= 1,000 -> nhân 2 đến 3 lần
+            tonMultiplier = Math.floor(Math.random() * 2) + 2;
         }
 
         let baseQty = 1;
@@ -328,13 +327,11 @@
                 qtySelected.push(sl);
                 currentTotal = giaSauGiam(item.donGia, sl, laGiamThue);
             } else {
-                let maxItemsAllowed = itemsHopLe.length;
-                let n = Math.floor(Math.random() * Math.min(8, maxItemsAllowed)) + 1;
-
                 let poolTemp = [...itemsHopLe];
                 let selectedMap = new Set();
 
-                while (rowsSelected.length < n && poolTemp.length > 0) {
+                // LỰA CHỌN KHÔNG GIỚI HẠN SỐ DÒNG HÀNG TRÊN 1 HÓA ĐƠN
+                while (poolTemp.length > 0) {
                     let itemChon = chonHangTheoTrongSoTon(poolTemp);
                     if (!itemChon) break;
 
@@ -343,9 +340,22 @@
                         let sl = tinhSoLuongChon(itemChon, loaiCT);
 
                         if (itemChon.tonKho >= sl) {
+                            let lineVal = giaSauGiam(itemChon.donGia, sl, laGiamThue);
+                            
+                            // Nếu cộng dòng này vào mà vượt quá target quá nhiều thì bỏ qua dòng này
+                            if (currentTotal + lineVal > mucTieu * 1.05 && rowsSelected.length > 0) {
+                                poolTemp = poolTemp.filter(x => x.maHang !== itemChon.maHang);
+                                continue;
+                            }
+
                             rowsSelected.push(itemChon);
                             qtySelected.push(sl);
-                            currentTotal += giaSauGiam(itemChon.donGia, sl, laGiamThue);
+                            currentTotal += lineVal;
+
+                            // Nếu tổng số tiền đã tiệm cận hoặc vượt target thì dừng nạp thêm mã
+                            if (currentTotal >= mucTieu - (mucTieu * 0.01)) {
+                                break;
+                            }
                         }
                     }
                     poolTemp = poolTemp.filter(x => x.maHang !== itemChon.maHang);
