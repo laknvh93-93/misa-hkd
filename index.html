@@ -252,6 +252,7 @@
         return 1;
     }
 
+    // ƯU TIÊN SỐ LƯỢNG LỚN HƠN CHO MẶT HÀNG TỒN KHO RẤT LỚN
     function tinhSoLuongChon(item, loaiCT) {
         if (loaiCT === "BIA") {
             return Math.floor(Math.random() * 5) + 1;
@@ -267,11 +268,25 @@
         let nhom = getNhomSanPham(item.tenHang);
         let step = getPackingMultiple(item.maHang, item.tenHang);
 
-        if (nhom === "SUA" || nhom === "MI") {
-            return step * (Math.floor(Math.random() * 3) + 1);
-        } else {
-            return step * (Math.floor(Math.random() * 2) + 1);
+        // Tính hệ số nhân dựa trên quy mô tồn kho
+        let tonMultiplier = 1;
+        if (item.tonKho >= 10000) {
+            tonMultiplier = Math.floor(Math.random() * 5) + 5; // Tồn >= 10,000 -> nhân 5 đến 9 lần
+        } else if (item.tonKho >= 3000) {
+            tonMultiplier = Math.floor(Math.random() * 3) + 3; // Tồn >= 3,000 -> nhân 3 đến 5 lần
+        } else if (item.tonKho >= 1000) {
+            tonMultiplier = Math.floor(Math.random() * 2) + 2; // Tồn >= 1,000 -> nhân 2 đến 3 lần
         }
+
+        let baseQty = 1;
+        if (nhom === "SUA" || nhom === "MI") {
+            baseQty = step * (Math.floor(Math.random() * 3) + 1);
+        } else {
+            baseQty = step * (Math.floor(Math.random() * 2) + 1);
+        }
+
+        let totalQty = baseQty * tonMultiplier;
+        return Math.min(totalQty, item.tonKho);
     }
 
     function giaSauGiam(donGia, soLuong, laGiamThue) {
@@ -313,7 +328,6 @@
                 qtySelected.push(sl);
                 currentTotal = giaSauGiam(item.donGia, sl, laGiamThue);
             } else {
-                // TỐI ƯU DÀNH CHO PT & NTTK: Ưu tiên chọn các mã có tồn kho lớn bằng Trọng Số Tồn Kho
                 let maxItemsAllowed = itemsHopLe.length;
                 let n = Math.floor(Math.random() * Math.min(8, maxItemsAllowed)) + 1;
 
@@ -334,7 +348,6 @@
                             currentTotal += giaSauGiam(itemChon.donGia, sl, laGiamThue);
                         }
                     }
-                    // Bỏ mã vừa chọn khỏi pool tạm thời để tránh lặp mã trong cùng 1 HĐ
                     poolTemp = poolTemp.filter(x => x.maHang !== itemChon.maHang);
                 }
             }
@@ -600,12 +613,17 @@
         let runningSoCT = rawSoCT;
         let parseCT = parseAndIncrementSoCT(runningSoCT);
 
+        // QUẢN LÝ TIẾN TRÌNH SỐ PHIẾU XUẤT KHO (XK) TOÀN HỆ THỐNG LIÊN TỤC
+        let savedXK = localStorage.getItem('last_seq_XK');
+        let runningXKNum = savedXK ? parseInt(savedXK, 10) : 1;
+
         danhSachKieuHD.forEach((pa) => {
             parseCT = parseAndIncrementSoCT(runningSoCT);
             let soCT = runningSoCT;
             
-            // Định dạng phiếu xuất kho XK đi kèm đồng bộ số tự nhiên với PT/NTTK
-            let soPX = parseCT.numStr ? ("XK" + parseCT.numStr) : ("XK" + runningSoCT);
+            // Định dạng XK000001 liên tục toàn bộ hệ thống
+            let soPX = "XK" + String(runningXKNum).padStart(6, '0');
+            runningXKNum++;
 
             thanhCongCount++;
             log(`--------------------------------------------------`);
@@ -651,10 +669,11 @@
             runningSoCT = parseCT.nextFull;
         });
 
-        // Lưu số đếm chứng từ kế tiếp vào localStorage để khi mở lại trang không bị về 1
+        // Lưu tiến trình mã chứng từ thu & số XK tiếp theo
         if (parseCT.prefix) {
             localStorage.setItem('last_seq_' + parseCT.prefix, parseCT.nextNum);
         }
+        localStorage.setItem('last_seq_XK', runningXKNum);
 
         document.getElementById('soCTInput').value = runningSoCT;
 
@@ -665,8 +684,9 @@
             XLSX.writeFile(wb, `Tong_Hop_Mau_Ban_Hang_MISA_${thanhCongCount}_CT.xlsx`);
             log(`==================================================`);
             log(`🎉 ĐÃ HOÀN THÀNH TẠO ${thanhCongCount}/${tongSoHDCanTao} CHỨNG TỪ.`);
-            log(`👉 Số chứng từ kế tiếp đã được tự động nhảy thành: ${runningSoCT}`);
-            alert(`Đã xuất thành công ${thanhCongCount}/${tongSoHDCanTao} chứng từ!\nSố chứng từ tiếp theo đã cập nhật thành: ${runningSoCT}`);
+            log(`👉 Số chứng từ kế tiếp: ${runningSoCT}`);
+            log(`👉 Số phiếu xuất tiếp theo: XK${String(runningXKNum).padStart(6, '0')}`);
+            alert(`Đã xuất thành công ${thanhCongCount}/${tongSoHDCanTao} chứng từ!\n- Chứng từ tiếp theo: ${runningSoCT}\n- Phiếu xuất tiếp theo: XK${String(runningXKNum).padStart(6, '0')}`);
         }
     });
 </script>
