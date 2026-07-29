@@ -44,8 +44,8 @@
         </div>
 
         <div class="form-group" id="groupTotal">
-            <label>Tổng số tiền cần phân bổ (Đơn vị: NGHÌN ĐỒNG hoặc nhập '20tr'):</label>
-            <input type="text" id="tongTienInput" placeholder="Ví dụ: 20000 hoặc 20tr">
+            <label>Tổng số tiền cần phân bổ (Đơn vị: NGHÌN ĐỒNG hoặc nhập '20tr', đối với Tiệc hỗ trợ từ 1tr - 100tr):</label>
+            <input type="text" id="tongTienInput" placeholder="Ví dụ: 20000 hoặc 20tr hoặc 50tr">
             <small style="color: #666;">* Tự động tạo HĐ bán lẻ tròn tiền, tinh chỉnh đơn giá nhẹ (Max ±1%).</small>
         </div>
 
@@ -57,6 +57,7 @@
                     <option value="NTTK">NTTK (Nộp tiền tài khoản)</option>
                     <option value="BIA">BIA (Chứng từ chuyên Bia - 1 loại/HĐ, SL: 1-5)</option>
                     <option value="THUOCLA">THUOCLA (Chứng từ Thuốc lá - 1 loại/HĐ, SL: 1-10)</option>
+                    <option value="TIEC">TIEC (Đơn tiệc lớn 1-100tr: Tối đa 1-2 Bia, Nước ngọt, Thuốc lá - Gọn 2-4 mã)</option>
                 </select>
             </div>
             <div class="form-group">
@@ -69,6 +70,10 @@
             <div class="form-group">
                 <label>Số chứng từ bắt đầu (Nhập dạng: PT000001, NTTK000001,...)</label>
                 <input type="text" id="soCTInput" value="PT000001">
+            </div>
+            <div class="form-group">
+                <label>Số phiếu xuất bắt đầu (Nhập dạng: XK000001,...)</label>
+                <input type="text" id="soPXInput" value="XK000001">
             </div>
             <div class="form-group">
                 <label>Ngày chứng từ</label>
@@ -96,22 +101,30 @@
     document.getElementById('ngayCT').valueAsDate = new Date();
     let danhSachVatTu = [];
 
-    // Tải số chứng từ gần nhất từ localStorage khi load trang
+    // Tải số chứng từ và số phiếu xuất từ localStorage khi load trang
     window.addEventListener('DOMContentLoaded', () => {
         capNhatSoCTMacDinh();
+        capNhatSoPXMacDinh();
     });
 
     function capNhatSoCTMacDinh() {
         const loai = document.getElementById('loaiCT').value;
         let prefix = "PT";
         if (loai === "NTTK") prefix = "NTTK";
-        else if (loai === "BIA" || loai === "THUOCLA") prefix = loai;
+        else if (loai === "BIA" || loai === "THUOCLA" || loai === "TIEC") prefix = loai;
 
         let savedNum = localStorage.getItem('last_seq_' + prefix);
         let num = savedNum ? parseInt(savedNum, 10) : 1;
         
         let padded = String(num).padStart(6, '0');
         document.getElementById('soCTInput').value = prefix + padded;
+    }
+
+    function capNhatSoPXMacDinh() {
+        let savedNum = localStorage.getItem('last_seq_XK');
+        let num = savedNum ? parseInt(savedNum, 10) : 1;
+        let padded = String(num).padStart(6, '0');
+        document.getElementById('soPXInput').value = "XK" + padded;
     }
 
     function doiCheDoNhap() {
@@ -128,7 +141,7 @@
     function xuLyDoiLoaiCT() {
         const loai = document.getElementById('loaiCT').value;
         const selectGiamThue = document.getElementById('giamThue');
-        if (loai === "BIA" || loai === "THUOCLA") {
+        if (loai === "BIA" || loai === "THUOCLA" || loai === "TIEC") {
             selectGiamThue.value = "KHONG";
         }
         capNhatSoCTMacDinh();
@@ -252,7 +265,6 @@
         return 1;
     }
 
-    // ƯU TIÊN SỐ LƯỢNG LỚN HƠN CHO MẶT HÀNG TỒN KHO RẤT LỚN
     function tinhSoLuongChon(item, loaiCT) {
         if (loaiCT === "BIA") {
             return Math.floor(Math.random() * 5) + 1;
@@ -330,7 +342,6 @@
                 let poolTemp = [...itemsHopLe];
                 let selectedMap = new Set();
 
-                // LỰA CHỌN KHÔNG GIỚI HẠN SỐ DÒNG HÀNG TRÊN 1 HÓA ĐƠN
                 while (poolTemp.length > 0) {
                     let itemChon = chonHangTheoTrongSoTon(poolTemp);
                     if (!itemChon) break;
@@ -342,7 +353,6 @@
                         if (itemChon.tonKho >= sl) {
                             let lineVal = giaSauGiam(itemChon.donGia, sl, laGiamThue);
                             
-                            // Nếu cộng dòng này vào mà vượt quá target quá nhiều thì bỏ qua dòng này
                             if (currentTotal + lineVal > mucTieu * 1.05 && rowsSelected.length > 0) {
                                 poolTemp = poolTemp.filter(x => x.maHang !== itemChon.maHang);
                                 continue;
@@ -352,7 +362,6 @@
                             qtySelected.push(sl);
                             currentTotal += lineVal;
 
-                            // Nếu tổng số tiền đã tiệm cận hoặc vượt target thì dừng nạp thêm mã
                             if (currentTotal >= mucTieu - (mucTieu * 0.01)) {
                                 break;
                             }
@@ -383,6 +392,148 @@
 
                         if (newGia >= minGia && newGia <= maxGia) {
                             let checkLine = giaSauGiam(newGia, sl, laGiamThue);
+                            if (checkLine - oldLine === diff) {
+                                adjustMap[i] = { oldGia: item.donGia, newGia: newGia, maHang: item.maHang };
+                                currentTotal += diff;
+                                diff = 0;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (currentTotal === mucTieu) {
+                return { rows: rowsSelected, qtys: qtySelected, adjustMap: adjustMap, tongTienHD: currentTotal };
+            }
+        }
+        return null;
+    }
+
+    // TÍNH NĂNG MỚI TỐI ƯU: ĐƠN TIỆC LỚN (GỌN 2-4 MÃ, KHÔNG NHẶT VẶT LAN MAN)
+    function taoChungTuTiecLon(mucTieu, fullListVatTu) {
+        let poolBia = fullListVatTu.filter(x => boDau(x.tenHang).includes("BIA") && x.tonKho > 0);
+        let poolNuocNgot = fullListVatTu.filter(x => (boDau(x.tenHang).includes("NUOC NGOT") || boDau(x.tenHang).includes("COCA") || boDau(x.tenHang).includes("COKE") || boDau(x.tenHang).includes("PEPSI")) && x.tonKho > 0);
+        let poolThuocLa = fullListVatTu.filter(x => (boDau(x.tenHang).includes("THUOC LA") || boDau(x.tenHang).includes("THUOC")) && !boDau(x.tenHang).includes("MUOI") && x.tonKho > 0);
+
+        if (poolBia.length === 0) {
+            alert("Lỗi Đơn Tiệc: Không tìm thấy mặt hàng Bia trong kho!");
+            return null;
+        }
+
+        for (let attempt = 0; attempt < 60000; attempt++) {
+            let rowsSelected = [];
+            let qtySelected = [];
+            let currentTotal = 0;
+
+            // Ngẫu nhiên chọn 1 trong các kịch bản thực tế
+            let mode = Math.random();
+
+            if (mode < 0.45) {
+                // KỊCH BẢN A: 1 Bia (chủ đạo) + 1 Thuốc lá bù khớp
+                let bia = poolBia[Math.floor(Math.random() * poolBia.length)];
+                
+                // Bia chiếm khoảng 85-98% giá trị đơn hàng
+                let targetBiaVal = mucTieu * (0.85 + Math.random() * 0.13);
+                let slBia = Math.floor(targetBiaVal / bia.donGia);
+                if (slBia < 1) slBia = 1;
+                slBia = Math.min(slBia, bia.tonKho);
+
+                rowsSelected.push(bia);
+                qtySelected.push(slBia);
+                currentTotal += Math.round(bia.donGia * slBia);
+
+                if (poolThuocLa.length > 0 && currentTotal < mucTieu) {
+                    let tl = poolThuocLa[Math.floor(Math.random() * poolThuocLa.length)];
+                    let conLai = mucTieu - currentTotal;
+                    let slTL = Math.round(conLai / tl.donGia);
+                    if (slTL >= 1 && slTL <= tl.tonKho) {
+                        rowsSelected.push(tl);
+                        qtySelected.push(slTL);
+                        currentTotal += Math.round(tl.donGia * slTL);
+                    }
+                }
+            } else if (mode < 0.80 && poolBia.length >= 2) {
+                // KỊCH BẢN B: 2 Loại Bia + 1 Thuốc lá
+                let shuffledBia = [...poolBia].sort(() => 0.5 - Math.random());
+                let bia1 = shuffledBia[0];
+                let bia2 = shuffledBia[1];
+
+                let ratioBia1 = 0.4 + Math.random() * 0.3; // 40-70%
+                let slBia1 = Math.floor((mucTieu * ratioBia1) / bia1.donGia);
+                slBia1 = Math.min(Math.max(slBia1, 1), bia1.tonKho);
+
+                let conLaiBia = (mucTieu - (slBia1 * bia1.donGia)) * 0.85;
+                let slBia2 = Math.floor(conLaiBia / bia2.donGia);
+                slBia2 = Math.min(Math.max(slBia2, 1), bia2.tonKho);
+
+                rowsSelected.push(bia1, bia2);
+                qtySelected.push(slBia1, slBia2);
+                currentTotal += Math.round(bia1.donGia * slBia1) + Math.round(bia2.donGia * slBia2);
+
+                if (poolThuocLa.length > 0 && currentTotal < mucTieu) {
+                    let tl = poolThuocLa[Math.floor(Math.random() * poolThuocLa.length)];
+                    let conLai = mucTieu - currentTotal;
+                    let slTL = Math.round(conLai / tl.donGia);
+                    if (slTL >= 1 && slTL <= tl.tonKho) {
+                        rowsSelected.push(tl);
+                        qtySelected.push(slTL);
+                        currentTotal += Math.round(tl.donGia * slTL);
+                    }
+                }
+            } else {
+                // KỊCH BẢN C: 1-2 Bia + 1 Nước ngọt + 1 Thuốc lá
+                let bia = poolBia[Math.floor(Math.random() * poolBia.length)];
+                let slBia = Math.floor((mucTieu * 0.7) / bia.donGia);
+                slBia = Math.min(Math.max(slBia, 1), bia.tonKho);
+
+                rowsSelected.push(bia);
+                qtySelected.push(slBia);
+                currentTotal += Math.round(bia.donGia * slBia);
+
+                if (poolNuocNgot.length > 0) {
+                    let nn = poolNuocNgot[Math.floor(Math.random() * poolNuocNgot.length)];
+                    let slNN = Math.floor(((mucTieu - currentTotal) * 0.6) / nn.donGia);
+                    if (slNN >= 1 && slNN <= nn.tonKho) {
+                        rowsSelected.push(nn);
+                        qtySelected.push(slNN);
+                        currentTotal += Math.round(nn.donGia * slNN);
+                    }
+                }
+
+                if (poolThuocLa.length > 0 && currentTotal < mucTieu) {
+                    let tl = poolThuocLa[Math.floor(Math.random() * poolThuocLa.length)];
+                    let conLai = mucTieu - currentTotal;
+                    let slTL = Math.round(conLai / tl.donGia);
+                    if (slTL >= 1 && slTL <= tl.tonKho) {
+                        rowsSelected.push(tl);
+                        qtySelected.push(slTL);
+                        currentTotal += Math.round(tl.donGia * slTL);
+                    }
+                }
+            }
+
+            if (rowsSelected.length === 0) continue;
+
+            // Cân đối đơn giá (quy tắc chỉnh giá nhẹ ≤ 1%) để đạt tròn 100% số tiền mục tiêu
+            let diff = mucTieu - currentTotal;
+            let adjustMap = {};
+
+            if (diff !== 0) {
+                for (let i = 0; i < rowsSelected.length; i++) {
+                    let item = rowsSelected[i];
+                    let sl = qtySelected[i];
+                    let oldLine = Math.round(item.donGia * sl);
+                    let targetLine = oldLine + diff;
+
+                    if (targetLine > 0) {
+                        let newGia = Math.round(targetLine / sl);
+                        let capLech = 0.01; // Giới hạn chỉnh giá max ±1%
+                        let minGia = Math.ceil(item.donGia * (1 - capLech));
+                        let maxGia = item.donGia >= 100000 ? item.donGia : Math.floor(item.donGia * (1 + capLech));
+
+                        if (newGia >= minGia && newGia <= maxGia) {
+                            let checkLine = Math.round(newGia * sl);
                             if (checkLine - oldLine === diff) {
                                 adjustMap[i] = { oldGia: item.donGia, newGia: newGia, maHang: item.maHang };
                                 currentTotal += diff;
@@ -459,6 +610,14 @@
             return sinhChungTuThuocLaPhanBoDong(tongTienVND, itemsHopLe, laGiamThue);
         }
 
+        if (loaiCT === "TIEC") {
+            let pa = taoChungTuTiecLon(tongTienVND, itemsHopLe);
+            if (pa) {
+                return { dsChungTu: [pa], tongDaTao: pa.tongTienHD };
+            }
+            return { dsChungTu: [], tongDaTao: 0 };
+        }
+
         let tongDaTao = 0;
         let dsChungTu = [];
         const minTarget = tongTienVND * 0.95;
@@ -500,9 +659,10 @@
         const loaiCT = document.getElementById('loaiCT').value;
         
         let laGiamThue = (document.getElementById('giamThue').value === "CO");
-        if (loaiCT === "BIA" || loaiCT === "THUOCLA") laGiamThue = false;
+        if (loaiCT === "BIA" || loaiCT === "THUOCLA" || loaiCT === "TIEC") laGiamThue = false;
 
         let rawSoCT = document.getElementById('soCTInput').value.trim();
+        let rawSoPX = document.getElementById('soPXInput').value.trim();
         const ngayCT = document.getElementById('ngayCT').value;
 
         let itemsHopLe = danhSachVatTu.filter(item => {
@@ -515,6 +675,10 @@
             }
             if (loaiCT === "THUOCLA") {
                 return tenUp.includes("THUOC LA") || tenUp.includes("THUOC");
+            }
+
+            if (loaiCT === "TIEC") {
+                return true; 
             }
 
             const multiple = getPackingMultiple(item.maHang, item.tenHang);
@@ -558,7 +722,7 @@
 
             log(`=== BẮT ĐẦU TẠO ${tongSoHDCanTao} CHỨNG TỪ THEO DANH SÁCH (${loaiCT}) ===`);
             danhSachMucTieu.forEach(mucTieu => {
-                let pa = taoMotChungTu(mucTieu, itemsHopLe, laGiamThue, loaiCT);
+                let pa = (loaiCT === "TIEC") ? taoChungTuTiecLon(mucTieu, itemsHopLe) : taoMotChungTu(mucTieu, itemsHopLe, laGiamThue, loaiCT);
                 if (pa) danhSachKieuHD.push(pa);
                 else log(`[THẤT BẠI] Không tìm được tổ hợp khớp với giá trị ${mucTieu.toLocaleString()} đ (Giới hạn sửa giá ≤ 1%)`);
             });
@@ -587,7 +751,7 @@
 
             let ptramDat = ((result.tongDaTao / totalVal) * 100).toFixed(2);
             log(`=== BẮT ĐẦU PHÂN BỔ BÁN LẺ TỔNG TIỀN ${(totalVal).toLocaleString()} đ (${loaiCT}) ===`);
-            log(`👉 Đã tạo thành công ${danhSachKieuHD.length} HĐ. Tổng thực tế: ${(result.tongDaTao).toLocaleString()} đ (${ptramDat}% - Sai số ±5%).`);
+            log(`👉 Đã tạo thành công ${danhSachKieuHD.length} HĐ. Tổng thực tế: ${(result.tongDaTao).toLocaleString()} đ (${ptramDat}%).`);
         }
 
         if (danhSachKieuHD.length === 0) {
@@ -621,19 +785,17 @@
 
         let thanhCongCount = 0;
         let runningSoCT = rawSoCT;
-        let parseCT = parseAndIncrementSoCT(runningSoCT);
+        let runningSoPX = rawSoPX;
 
-        // QUẢN LÝ TIẾN TRÌNH SỐ PHIẾU XUẤT KHO (XK) TOÀN HỆ THỐNG LIÊN TỤC
-        let savedXK = localStorage.getItem('last_seq_XK');
-        let runningXKNum = savedXK ? parseInt(savedXK, 10) : 1;
+        let parseCT = parseAndIncrementSoCT(runningSoCT);
+        let parsePX = parseAndIncrementSoCT(runningSoPX);
 
         danhSachKieuHD.forEach((pa) => {
             parseCT = parseAndIncrementSoCT(runningSoCT);
+            parsePX = parseAndIncrementSoCT(runningSoPX);
+
             let soCT = runningSoCT;
-            
-            // Định dạng XK000001 liên tục toàn bộ hệ thống
-            let soPX = "XK" + String(runningXKNum).padStart(6, '0');
-            runningXKNum++;
+            let soPX = runningSoPX;
 
             thanhCongCount++;
             log(`--------------------------------------------------`);
@@ -677,15 +839,19 @@
             }
 
             runningSoCT = parseCT.nextFull;
+            runningSoPX = parsePX.nextFull;
         });
 
-        // Lưu tiến trình mã chứng từ thu & số XK tiếp theo
+        // Lưu tiến trình mã chứng từ & phiếu xuất tiếp theo vào localStorage
         if (parseCT.prefix) {
             localStorage.setItem('last_seq_' + parseCT.prefix, parseCT.nextNum);
         }
-        localStorage.setItem('last_seq_XK', runningXKNum);
+        if (parsePX.prefix) {
+            localStorage.setItem('last_seq_' + parsePX.prefix, parsePX.nextNum);
+        }
 
         document.getElementById('soCTInput').value = runningSoCT;
+        document.getElementById('soPXInput').value = runningSoPX;
 
         if (thanhCongCount > 0) {
             const ws = XLSX.utils.aoa_to_sheet(allDataRows);
@@ -695,8 +861,8 @@
             log(`==================================================`);
             log(`🎉 ĐÃ HOÀN THÀNH TẠO ${thanhCongCount}/${tongSoHDCanTao} CHỨNG TỪ.`);
             log(`👉 Số chứng từ kế tiếp: ${runningSoCT}`);
-            log(`👉 Số phiếu xuất tiếp theo: XK${String(runningXKNum).padStart(6, '0')}`);
-            alert(`Đã xuất thành công ${thanhCongCount}/${tongSoHDCanTao} chứng từ!\n- Chứng từ tiếp theo: ${runningSoCT}\n- Phiếu xuất tiếp theo: XK${String(runningXKNum).padStart(6, '0')}`);
+            log(`👉 Số phiếu xuất tiếp theo: ${runningSoPX}`);
+            alert(`Đã xuất thành công ${thanhCongCount}/${tongSoHDCanTao} chứng từ!\n- Chứng từ tiếp theo: ${runningSoCT}\n- Phiếu xuất tiếp theo: ${runningSoPX}`);
         }
     });
 </script>
