@@ -32,14 +32,14 @@
         <div class="form-group">
             <label>Phương thức nhập giá trị:</label>
             <div class="radio-group">
-                <label><input type="radio" name="modeNhap" value="LIST" onclick="doiCheDoNhap()"> Nhập danh sách từng HĐ (phân tách dấu ';')</label>
+                <label><input type="radio" name="modeNhap" value="LIST" onclick="doiCheDoNhap()"> Nhập danh sách từng HĐ (phân tách dấu ';' hoặc space)</label>
                 <label><input type="radio" name="modeNhap" value="TOTAL" checked onclick="doiCheDoNhap()"> Nhập TỔNG TIỀN (Phân bổ Bán lẻ tự nhiên, sai số ±5%)</label>
             </div>
         </div>
 
         <div class="form-group" id="groupList" style="display: none;">
-            <label>Danh sách giá trị hóa đơn (Đơn vị: NGHÌN ĐỒNG, phân tách bằng dấu ';'):</label>
-            <textarea id="danhSachGiaTri" placeholder="Ví dụ: 250;350;525;1359;45"></textarea>
+            <label>Danh sách giá trị hóa đơn (Đơn vị: NGHÌN ĐỒNG, phân tách bằng dấu ';' hoặc dấu cách/space):</label>
+            <textarea id="danhSachGiaTri" placeholder="Ví dụ: 250;350 525 1359;45"></textarea>
             <small style="color: #666;">* Nhập <b>250</b> = <b>250.000đ</b> (Chỉnh giá tối đa ±1% để khớp tròn tiền)</small>
         </div>
 
@@ -708,7 +708,8 @@
                 alert("Vui lòng nhập danh sách giá trị hóa đơn!");
                 return;
             }
-            let danhSachMucTieu = rawInput.split(';')
+            // Tách theo cả dấu chấm phẩy ';' và dấu khoảng trắng 'space' (hoặc kết hợp)
+            let danhSachMucTieu = rawInput.split(/[;\s]+/)
                 .map(v => parseFloat(v.trim()))
                 .filter(v => !isNaN(v) && v > 0)
                 .map(v => v * 1000);
