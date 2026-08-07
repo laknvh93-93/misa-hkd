@@ -55,7 +55,7 @@
                 <select id="loaiCT" onchange="xuLyDoiLoaiCT()">
                     <option value="PT">PT (Phiếu thu tiền mặt hàng tổng hợp)</option>
                     <option value="NTTK">NTTK (Nộp tiền tài khoản)</option>
-                    <option value="BIA">BIA (Chứng từ chuyên Bia - 1 loại/HĐ, SL: 1-5)</option>
+                    <option value="BIA">BIA (Chứng từ chuyên Bia/Nước ngọt - 1 loại/HĐ, SL: 1-5)</option>
                     <option value="THUOCLA">THUOCLA (Chứng từ Thuốc lá - 1 loại/HĐ, SL: 1-10)</option>
                     <option value="TIEC">TIEC (Đơn tiệc lớn 1-100tr: Tối đa 1-2 Bia, Nước ngọt, Thuốc lá - Gọn 2-4 mã)</option>
                 </select>
@@ -426,10 +426,10 @@
             let qtySelected = [];
             let currentTotal = 0;
 
-            // Ngẫu nhiên chọn 1 trong các kịch bản thực tế
+            // Ngẫu nhiên chọn 1 trong các kịch bản thực tế (Bia, Nước ngọt, Thuốc lá)
             let mode = Math.random();
 
-            if (mode < 0.45) {
+            if (mode < 0.35) {
                 // KỊCH BẢN A: 1 Bia (chủ đạo) + 1 Thuốc lá bù khớp
                 let bia = poolBia[Math.floor(Math.random() * poolBia.length)];
                 
@@ -453,7 +453,7 @@
                         currentTotal += Math.round(tl.donGia * slTL);
                     }
                 }
-            } else if (mode < 0.80 && poolBia.length >= 2) {
+            } else if (mode < 0.65 && poolBia.length >= 2) {
                 // KỊCH BẢN B: 2 Loại Bia + 1 Thuốc lá
                 let shuffledBia = [...poolBia].sort(() => 0.5 - Math.random());
                 let bia1 = shuffledBia[0];
@@ -482,9 +482,9 @@
                     }
                 }
             } else {
-                // KỊCH BẢN C: 1-2 Bia + 1 Nước ngọt + 1 Thuốc lá
+                // KỊCH BẢN C: 1-2 Bia + 1 Nước ngọt + 1 Thuốc lá (Bán kèm Nước ngọt)
                 let bia = poolBia[Math.floor(Math.random() * poolBia.length)];
-                let slBia = Math.floor((mucTieu * 0.7) / bia.donGia);
+                let slBia = Math.floor((mucTieu * 0.6) / bia.donGia);
                 slBia = Math.min(Math.max(slBia, 1), bia.tonKho);
 
                 rowsSelected.push(bia);
@@ -493,7 +493,7 @@
 
                 if (poolNuocNgot.length > 0) {
                     let nn = poolNuocNgot[Math.floor(Math.random() * poolNuocNgot.length)];
-                    let slNN = Math.floor(((mucTieu - currentTotal) * 0.6) / nn.donGia);
+                    let slNN = Math.floor(((mucTieu - currentTotal) * 0.7) / nn.donGia);
                     if (slNN >= 1 && slNN <= nn.tonKho) {
                         rowsSelected.push(nn);
                         qtySelected.push(slNN);
@@ -671,7 +671,8 @@
             const tenUp = boDau(item.tenHang);
 
             if (loaiCT === "BIA") {
-                return tenUp.includes("BIA");
+                // Bổ sung lọc các loại Nước ngọt trong chế độ BIA
+                return tenUp.includes("BIA") || tenUp.includes("NUOC NGOT") || tenUp.includes("COCA") || tenUp.includes("COKE") || tenUp.includes("PEPSI");
             }
             if (loaiCT === "THUOCLA") {
                 return tenUp.includes("THUOC LA") || tenUp.includes("THUOC");
